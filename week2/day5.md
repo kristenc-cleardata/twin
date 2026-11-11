@@ -716,8 +716,9 @@ cd terraform
 
 # IMPORTANT: Make sure you're in the default workspace
 terraform workspace select default
+```
 
-# First, check if the OIDC provider already exists
+First, check if the OIDC provider already exists:
 
 **Mac/Linux:**
 ```bash
