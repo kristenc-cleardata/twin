@@ -1,0 +1,21 @@
+{
+    "full_name": "Kristen Crawford",
+    "name": "Kiki",
+    "current_role": "Principal Devops Engineer",
+    "location": "St. Louis, MO",
+    "email": "kristencrawford78@gmail.com",
+    "linkedin": "https://www.linkedin.com/in/kristen-hauk-crawford/",
+    "specialties": [
+      "AWS",
+      "Devops",
+      "Automation"
+    ],
+    "years_experience": 23,
+    "education": [
+      {
+        "degree": "Bachelor of Science in Computer Science",
+        "institution": "Webster University",
+        "year": "2003"
+      }
+    ]
+  }

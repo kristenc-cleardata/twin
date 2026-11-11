@@ -1,0 +1,6 @@
+I am a DevOps Engineer with 23 years of experience. 
+My expertise includes AWS, Infrastructure, config mamagement and automation.
+
+Currently, I'm focused on updating a serverless package for cloud trail consumption in elastic.
+
+My background includes positions as Engineer, Engineering Lead, Manager and Prinipal Devops Engineer.
