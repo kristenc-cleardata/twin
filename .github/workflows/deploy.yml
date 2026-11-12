@@ -85,20 +85,38 @@ jobs:
             | jq '{iss, aud, sub, repository, repository_owner, ref, environment}'
           echo "::endgroup::"
 
-          echo "::group::Live sts:AssumeRoleWithWebIdentity attempt"
-          if [ -z "$ROLE_ARN" ]; then
-            echo "skipped - no role ARN to try"
-          elif aws sts assume-role-with-web-identity \
-                 --role-arn "$ROLE_ARN" \
-                 --role-session-name oidc-debug \
-                 --web-identity-token "$TOKEN" \
-                 --region "${REGION:-us-east-1}" \
-                 --query 'AssumedRoleUser.Arn' --output text; then
-            echo "assume-role SUCCEEDED (the ARN above is the session identity)"
-          else
-            echo "assume-role FAILED - the STS error above is the real reason"
-          fi
-          echo "::endgroup::"
+          # Hand the token to the probe steps below
+          printf '%s' "$TOKEN" > "$RUNNER_TEMP/oidc.jwt"
+          chmod 600 "$RUNNER_TEMP/oidc.jwt"
+
+      # TEMPORARY probe A: owner-scoped trust policy, zero permissions.
+      # Failing here means the block is above the role (SCP or provider), not the sub condition.
+      - name: OIDC probe A - control role
+        env:
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          REGION: ${{ secrets.DEFAULT_AWS_REGION }}
+        run: |
+          set -euo pipefail
+          aws sts assume-role-with-web-identity \
+            --role-arn "arn:aws:iam::${ACCOUNT_ID}:role/github-oidc-control-test" \
+            --role-session-name oidc-control \
+            --web-identity-token "$(cat "$RUNNER_TEMP/oidc.jwt")" \
+            --region "${REGION:-us-east-1}" \
+            --query 'AssumedRoleUser.Arn' --output text
+
+      # TEMPORARY probe B: the real deploy role, scoped to repo:<owner>/<repo>:*
+      - name: OIDC probe B - real deploy role
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          REGION: ${{ secrets.DEFAULT_AWS_REGION }}
+        run: |
+          set -euo pipefail
+          aws sts assume-role-with-web-identity \
+            --role-arn "$ROLE_ARN" \
+            --role-session-name oidc-real \
+            --web-identity-token "$(cat "$RUNNER_TEMP/oidc.jwt")" \
+            --region "${REGION:-us-east-1}" \
+            --query 'AssumedRoleUser.Arn' --output text
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
