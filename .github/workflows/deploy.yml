@@ -16,7 +16,6 @@ on:
           - prod
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -29,100 +28,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # TEMPORARY: remove once OIDC is working
-      - name: Debug OIDC
-        continue-on-error: true
-        env:
-          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-          REGION: ${{ secrets.DEFAULT_AWS_REGION }}
-        run: |
-          set -uo pipefail
-
-          echo "::group::Secret shape"
-          if [ -z "$ACCOUNT_ID" ]; then
-            echo "AWS_ACCOUNT_ID    : EMPTY"
-          elif printf '%s' "$ACCOUNT_ID" | grep -Eq '^[0-9]{12}$'; then
-            echo "AWS_ACCOUNT_ID    : 12 digits, no stray characters"
-          else
-            echo "AWS_ACCOUNT_ID    : ${#ACCOUNT_ID} characters, NOT 12 plain digits"
-          fi
-
-          if [ -z "$REGION" ]; then
-            echo "DEFAULT_AWS_REGION: EMPTY"
-          else
-            echo "DEFAULT_AWS_REGION: $REGION"
-          fi
-
-          if [ -z "$ROLE_ARN" ]; then
-            echo "AWS_ROLE_ARN      : EMPTY - missing, or not visible to the '${{ github.event.inputs.environment || 'dev' }}' environment"
-          else
-            echo "AWS_ROLE_ARN      : ${#ROLE_ARN} characters"
-            expected="arn:aws:iam::${ACCOUNT_ID}:role/github-actions-twin-deploy"
-            if [ "$ROLE_ARN" = "$expected" ]; then
-              echo "  exact match against arn:aws:iam::<AWS_ACCOUNT_ID>:role/github-actions-twin-deploy"
-            else
-              echo "  DOES NOT match arn:aws:iam::<AWS_ACCOUNT_ID>:role/github-actions-twin-deploy"
-              echo "    account segment: $([ "$(printf '%s' "$ROLE_ARN" | cut -d: -f5)" = "$ACCOUNT_ID" ] && echo 'matches AWS_ACCOUNT_ID' || echo 'DIFFERENT from AWS_ACCOUNT_ID')"
-              echo "    role name      : $(printf '%s' "$ROLE_ARN" | cut -d/ -f2-)"
-              printf '%s' "$ROLE_ARN" | grep -q '[[:space:]"]' \
-                && echo "    WARNING: contains whitespace or quote characters" \
-                || echo "    no stray whitespace or quotes"
-            fi
-          fi
-          echo "::endgroup::"
-
-          echo "::group::OIDC token claims"
-          TOKEN=$(curl -sS \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -r '.value')
-          payload=$(printf '%s' "$TOKEN" | cut -d. -f2)
-          case $(( ${#payload} % 4 )) in
-            2) payload="$payload==" ;;
-            3) payload="$payload=" ;;
-          esac
-          printf '%s' "$payload" | tr '_-' '/+' | base64 -d \
-            | jq '{iss, aud, sub, repository, repository_owner, ref, environment}'
-          echo "::endgroup::"
-
-          # Hand the token to the probe steps below
-          printf '%s' "$TOKEN" > "$RUNNER_TEMP/oidc.jwt"
-          chmod 600 "$RUNNER_TEMP/oidc.jwt"
-
-      # TEMPORARY probe A: owner-scoped trust policy, zero permissions.
-      # Failing here means the block is above the role (SCP or provider), not the sub condition.
-      - name: OIDC probe A - control role
-        env:
-          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-          REGION: ${{ secrets.DEFAULT_AWS_REGION }}
-        run: |
-          set -euo pipefail
-          aws sts assume-role-with-web-identity \
-            --role-arn "arn:aws:iam::${ACCOUNT_ID}:role/github-oidc-control-test" \
-            --role-session-name oidc-control \
-            --web-identity-token "$(cat "$RUNNER_TEMP/oidc.jwt")" \
-            --region "${REGION:-us-east-1}" \
-            --query 'AssumedRoleUser.Arn' --output text
-
-      # TEMPORARY probe B: the real deploy role, scoped to repo:<owner>/<repo>:*
-      - name: OIDC probe B - real deploy role
-        env:
-          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-          REGION: ${{ secrets.DEFAULT_AWS_REGION }}
-        run: |
-          set -euo pipefail
-          aws sts assume-role-with-web-identity \
-            --role-arn "$ROLE_ARN" \
-            --role-session-name oidc-real \
-            --web-identity-token "$(cat "$RUNNER_TEMP/oidc.jwt")" \
-            --region "${REGION:-us-east-1}" \
-            --query 'AssumedRoleUser.Arn' --output text
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: github-actions-deploy
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.DEFAULT_AWS_REGION }}
 
       - name: Set up Python
@@ -156,9 +66,7 @@ jobs:
           # Make script executable and run it
           chmod +x scripts/deploy.sh
           ./scripts/deploy.sh ${{ github.event.inputs.environment || 'dev' }}
-        env:
-          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-          
+
       - name: Get Deployment URLs
         id: deploy_outputs
         working-directory: ./terraform
